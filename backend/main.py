@@ -3,7 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from uuid import uuid4
 
-app = FastAPI(title="FieldOps AI")
+from contextlib import asynccontextmanager
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from database import Base, engine, get_db
+from schemas import JobCreate, JobResponse
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+app = FastAPI(
+    title="FieldOps AI",
+    lifespan = lifespan
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,20 +28,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class JobCreate(BaseModel):
-    technician: str
-    notes: str = Field(min_length=1)
-
-class Job(JobCreate):
-    id: str
-    status: str = "pending"
-
-jobs : dict[str, Job] = {}
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.post("/jobs", response_model=Job, status_code=201)
-def create_job(job: JobCreate):
+@app.post(
+    "/jobs", 
+    response_model=Job, 
+    status_code=201
+)
+def create_job(
+    data: JobCreate,
+    db: Session = Depends(get_db)
+):
     
+    job = models.Job(
+        id=str(uuid4()),
+        technician=data.technician,
+        notes=data.notes,
+        status="pending"
+    )
+
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return job
+
+@app.get("/jobs", response_model=list[JobResponse])
+def list_jobs(db: Session = Depends(get_db)):
+    return db.scalars(select(Job)).all
+
+@app.get(
+    "/jobs/{job_id}", 
+    response_model=JobResponse
+)
+def get_job(
+    job_id: str,
+    db: Session= Depends(get_db)
+):
+    job = db.get(Job, job_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found"
+        )
+
+    return job
+
+
