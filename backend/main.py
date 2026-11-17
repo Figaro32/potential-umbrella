@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from uuid import uuid4
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db
+from models import Job
 from schemas import JobCreate, JobResponse
 
 @asynccontextmanager
@@ -34,7 +35,7 @@ def health():
 
 @app.post(
     "/jobs", 
-    response_model=Job, 
+    response_model=JobResponse, 
     status_code=201
 )
 def create_job(
@@ -42,7 +43,7 @@ def create_job(
     db: Session = Depends(get_db)
 ):
     
-    job = models.Job(
+    job = Job(
         id=str(uuid4()),
         technician=data.technician,
         notes=data.notes,
